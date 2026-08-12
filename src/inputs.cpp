@@ -14,89 +14,59 @@ static bool s_isLastTickOfFrame = true;
 static bool s_updateJumpCalledP1 = false;
 static bool s_updateJumpCalledP2 = false;
 
-static float getBaseGravity(PlayerObject* player) {
-	if (player->isInBasicMode()) {
-		return static_cast<float>(player->m_gravity) * player->m_gravityMod;
-	} else {
-		return 0.958199f * player->m_gravityMod;
-	}
-}
-
-// tried my best to recreate the conditions from ghidra
-// i wouldn't be surprised if something's wrong
-static float getGravityCoefficient(PlayerObject* player) {
-	if (player->m_isShip) {
-		double yVel = player->m_yVelocity;
-		bool upsideDown = player->m_isUpsideDown;
-		bool holding = player->m_jumpBuffered;
-		bool wrongDir = (!upsideDown && yVel < 0) || (upsideDown && yVel > 0);
-		bool fbugged = player->playerIsFallingBugged();
-		bool accel = player->m_isAccelerating; // this field name sucks
-		// im pretty sure m_isAccelerating is just true whenever yvel
-		// is NOT within (-6.4, 8.0) and false otherwise
-		// it's also like one tick stale but oh well
-
-		float coeff = 0.8f;
-		if (holding) {
-			if (!accel || wrongDir) coeff = -1.0f;
-		} else {
-			if (accel && wrongDir) coeff = -1.0f;
-			if (!fbugged) coeff = 1.2f;
-		}
-		float randomScaleThing = (holding && fbugged) ? 0.5f : 0.4f;
-		return coeff * randomScaleThing;
-	}
-
-	if (player->m_isBird) {
-		return player->playerIsFallingBugged() ? 0.4f : 0.6f;
-	}
-
-	if (player->m_isBall) return 0.6f;
-
+/// @param scaledDt the dt param passed to updateJump(float dt)
+static float getGravPerTick(PlayerObject* player, float scaledDt) {
 	if (player->m_isDart) return 0.0f;
 
-	if (player->m_isRobot) return 0.9f;
-
-	if (player->m_isSpider) return 0.6f;
-
-	if (player->m_isSwing) {
-		if (player->m_vehicleSize != 1.0f)
-			return 0.6f;
-		else
-			return 0.4f;
-	}
-
-	return 1.0f;
-}
-
-static double getGravPerTick(PlayerObject* player, double scaledDt) {
-	if (player->m_isDart) {
-		return 0.0;
-	}
-
-	if (player->m_isOnGround) {
-		return 0.0;
-	}
+	if (player->m_isOnGround) return 0.0f;
 
 	if (player->m_isRobot && player->m_maybeIsBoosted && player->m_jumpBuffered &&
 		!player->m_touchedPad && player->m_accelerationOrSpeed < 1.5f) {
-		return 0.0;
+		return 0.0f;
 	}
 
-	double gravPerTick = getBaseGravity(player) * getGravityCoefficient(player) * scaledDt;
+	bool jumpBuffered = player->m_jumpBuffered;
+	bool fallingBugged = player->playerIsFallingBugged();
+	bool isMini = player->m_vehicleSize != 1.0f;
 
-	if (player->isFlying()) {
-		double sizeScale = (player->m_vehicleSize != 1.0f) ? 0.85 : 1.0;
-		gravPerTick /= sizeScale;
+	float rawBaseGravity =
+		player->isInBasicMode() ? static_cast<float>(player->m_gravity) : 0.958199f;
+	float baseGravity = rawBaseGravity * player->m_gravityMod;
+	float sizeFactor = isMini ? (player->isFlying() ? 0.85f : 0.8f) : 1.0f;
+
+	float gravPerTick;
+
+	if (player->m_isShip) {
+		bool isFalling = player->m_yVelocity * player->flipMod() < 0.0;
+		bool forceNegative = player->m_isAccelerating ? isFalling : jumpBuffered;
+
+		float shipYVelFactor = 0.8f;
+		if (forceNegative) shipYVelFactor = -1.0f;
+		if (!jumpBuffered && !fallingBugged) shipYVelFactor = 1.2f;
+
+		if (player->m_isPlatformer) baseGravity *= 0.8f;
+
+		float effectiveBaseGrav = shipYVelFactor >= 0.0f ? baseGravity : rawBaseGravity;
+		float gravCoeff = (jumpBuffered && fallingBugged) ? 0.5f : 0.4f;
+
+		gravPerTick = scaledDt * effectiveBaseGrav * shipYVelFactor * gravCoeff / sizeFactor;
+	} else if (player->m_isBird) {
+		float ufoYVelFactor = fallingBugged ? 0.8f : 1.2f;
+		gravPerTick = scaledDt * baseGravity * ufoYVelFactor * 0.5f / sizeFactor;
+	} else if (player->m_isSwing) {
+		float swingSizeFactor = isMini ? 0.6f : 0.4f;
+		gravPerTick = scaledDt * baseGravity * swingSizeFactor;
+	} else {
+		float gravCoeff = 1.0f;
+		if (player->m_isBall || player->m_isSpider)
+			gravCoeff = 0.6f;
+		else if (player->m_isRobot)
+			gravCoeff = 0.9f;
+
+		gravPerTick = scaledDt * baseGravity * gravCoeff;
 	}
 
-	// vanilla doesn't round the gravity itself but it rounds velocity instead
-	// so ideally i'd do that but i can't be bothered rn
-	if (!Config::get().isVelocityUnroundingEnabled()) {
-		gravPerTick = std::round(gravPerTick * 1000.0) / 1000.0;
-	}
-
-	return -1 * player->flipMod() * gravPerTick;
+	return player->flipMod() * -gravPerTick;
 }
 
 namespace subtickinputs::inputs {
@@ -120,8 +90,8 @@ namespace subtickinputs::inputs {
 		auto& config = Config::get();
 
 		double tps = 1.0 / dt;
-		double scaledDt = 60.0 / tps * 0.9;
 		double inputChecksPerTick = config.getInputHz() / tps;
+		float scaledDt = 60.0f * dt * 0.9f;
 
 		PlayerObject* p1 = playLayer->m_player1;
 		PlayerObject* p2 = playLayer->m_player2;
@@ -152,6 +122,12 @@ namespace subtickinputs::inputs {
 			PlayerObject* player = input.m_isPlayer2 ? p2 : p1;
 
 			double currentTime = input.m_timestamp;
+
+			// something is off with this
+			// when i expect 0.5 i consistently get 0.49999997392296924
+			// or 0.25 giving 0.24999998696148462
+			// all consistently off by 0.00000521540615%
+			// i'll leave it for now
 			double ratio = (currentTime - tickStartTime) / tickDuration;
 			ratio = std::clamp(ratio, 0.0, 1.0);
 
@@ -175,10 +151,10 @@ namespace subtickinputs::inputs {
 			}
 
 			double preVel1 = p1 ? p1->m_yVelocity : 0.0;
-			double preDv1 = p1 ? getGravPerTick(p1, scaledDt) : 0.0;
+			float preDv1 = p1 ? getGravPerTick(p1, scaledDt) : 0.0;
 
 			double preVel2 = p2 ? p2->m_yVelocity : 0.0;
-			double preDv2 = p2 ? getGravPerTick(p2, scaledDt) : 0.0;
+			float preDv2 = p2 ? getGravPerTick(p2, scaledDt) : 0.0;
 
 			s_updateJumpCalledP1 = false;
 			s_updateJumpCalledP2 = false;
@@ -192,15 +168,16 @@ namespace subtickinputs::inputs {
 				if (!s_updateJumpCalledP1) p1->updateJump(0.0f);
 
 				double postVel = p1->m_yVelocity;
-				double postDv = getGravPerTick(p1, scaledDt);
+				float postDv = getGravPerTick(p1, scaledDt);
 
 				adjustedYVel1 += ratio * ((preVel1 - postVel) + (preDv1 - postDv));
 
 				if (Config::get().isDebugModeEnabled()) {
 					log::debug(
-						"p1 preVel: {}, postVel: {}, preDv: {}, postDv: {}, ratio: {}, "
+						"p1 preVel: {}, postVel: {}, preDv: {}, postDv: {}, dt: {}, scaledDt: {}, "
+						"ratio: {}, "
 						"adjustedYVel: {}",
-						preVel1, postVel, preDv1, postDv, ratio, adjustedYVel1);
+						preVel1, postVel, preDv1, postDv, dt, scaledDt, ratio, adjustedYVel1);
 				}
 			}
 
@@ -208,15 +185,16 @@ namespace subtickinputs::inputs {
 				if (!s_updateJumpCalledP2) p2->updateJump(0.0f);
 
 				double postVel = p2->m_yVelocity;
-				double postDv = getGravPerTick(p2, scaledDt);
+				float postDv = getGravPerTick(p2, scaledDt);
 
 				adjustedYVel2 += ratio * ((preVel2 - postVel) + (preDv2 - postDv));
 
 				if (Config::get().isDebugModeEnabled()) {
 					log::debug(
-						"p2 preVel: {}, postVel: {}, preDv: {}, postDv: {}, ratio: {}, "
+						"p2 preVel: {}, postVel: {}, preDv: {}, postDv: {}, dt: {}, scaledDt: {}, "
+						"ratio: {}, "
 						"adjustedYVel: {}",
-						preVel2, postVel, preDv2, postDv, ratio, adjustedYVel2);
+						preVel2, postVel, preDv2, postDv, dt, scaledDt, ratio, adjustedYVel2);
 				}
 			}
 			// the handleButton + updateJump method to "dispatch" an input could be wrong

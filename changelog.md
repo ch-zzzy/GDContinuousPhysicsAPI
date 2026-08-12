@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.6.1
+
+- rewrote getGravPerTick (this has been unreleased for like a week or two i forgot ✌️)
+- fixed debug logs
+
 ## v0.6.0
 
 - reworked processInputs again, should hopefully fix the mod doing effectively nothing below 240fps (which kinda defeated the purpose)

@@ -11,7 +11,6 @@ using namespace subtickinputs::fields;
 
 static std::string getFrameForStreak(ShipStreak type, float time);
 
-// alpha is the goat for doing all this decomp 🙏
 // modification at line: 155
 void SIPlayerObject::processPlayerTick(float dt) {
 	auto dtModified = dt * 0.9f;
@@ -155,11 +154,17 @@ void SIPlayerObject::processPlayerTick(float dt) {
 		// m_yVelocityRelated3 = yOffset;
 
 		double& yDispAdjustment = GET_PLAYER_FIELD(this, m_yDispAdjustment);
+		bool logDebug = Config::get().isDebugModeEnabled() && yDispAdjustment != 0.0;
+
+		if (logDebug) {
+			log::debug("vanilla ypos displacement (double): {}", yOffset);
+			log::debug("true vanilla ypos displacement (float):  {}", static_cast<float>(yOffset));
+			log::debug("m_yDispAdjustment: {}", yDispAdjustment);
+		}
+
 		m_yVelocityRelated3 = yOffset += yDispAdjustment;
 
-		if (Config::get().isDebugModeEnabled() && yDispAdjustment != 0.0) {
-			log::debug("vanilla ypos displacement: {}", yOffset);
-			log::debug("m_yDispAdjustment: {}", yDispAdjustment);
+		if (logDebug) {
 			log::debug("total ypos displacement: {}", m_yVelocityRelated3);
 		}
 

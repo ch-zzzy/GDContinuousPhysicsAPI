@@ -25,17 +25,17 @@ void SIPlayerObject::update(float dt) {
 		return;
 	}
 
-	constexpr double SMALLEST_FLOAT = std::numeric_limits<float>::min();
-
 	PlayLayer* playLayer = PlayLayer::get();
 	double lastRatio = 0.0;
 
 	CCPoint preTickPosition = this->getPosition();
 	bool firstLoop = true;
 	bool startedOnGround = this->m_isOnGround;
+	
+	constexpr double EPSILON = std::numeric_limits<float>::min();
 
 	for (auto& input : pendingWaveInputs) {
-		double segment = std::clamp(input.m_ratio - lastRatio, SMALLEST_FLOAT, 1.0);
+		double segment = std::clamp(input.m_ratio - lastRatio, EPSILON, 1.0);
 
 		PlayerObject::update(segment * dt);
 
