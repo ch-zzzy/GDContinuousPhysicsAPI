@@ -16,8 +16,12 @@ static bool s_updateJumpCalledP2 = false;
 
 // made this to emulate the rounding from setYVelocity
 static double vanillaRoundValue(double value) {
-	int integerPart = static_cast<int>(value);
-	return std::round((value - integerPart) * 1000.0) / 1000.0 + integerPart;
+	if (Config::get().isVelocityUnroundingEnabled()) {
+		return value;
+	} else {
+		int integerPart = static_cast<int>(value);
+		return std::round((value - integerPart) * 1000.0) / 1000.0 + integerPart;
+	}
 }
 
 /// @param scaledDt the dt param passed to updateJump(float dt)
