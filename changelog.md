@@ -4,6 +4,7 @@
 
 - rewrote getGravPerTick (this has been unreleased for like a week or two i forgot ✌️)
 - fixed debug logs
+- bump geode version
 
 ## v0.6.0
 

@@ -14,6 +14,12 @@ static bool s_isLastTickOfFrame = true;
 static bool s_updateJumpCalledP1 = false;
 static bool s_updateJumpCalledP2 = false;
 
+// made this to emulate the rounding from setYVelocity
+static double vanillaRoundValue(double value) {
+	int integerPart = static_cast<int>(value);
+	return std::round((value - integerPart) * 1000.0) / 1000.0 + integerPart;
+}
+
 /// @param scaledDt the dt param passed to updateJump(float dt)
 static float getGravPerTick(PlayerObject* player, float scaledDt) {
 	if (player->m_isDart) return 0.0f;
@@ -66,7 +72,8 @@ static float getGravPerTick(PlayerObject* player, float scaledDt) {
 		gravPerTick = scaledDt * baseGravity * gravCoeff;
 	}
 
-	return player->flipMod() * -gravPerTick;
+	float dV = player->flipMod() * gravPerTick;
+	return vanillaRoundValue(player->m_yVelocity - dV) - player->m_yVelocity;
 }
 
 namespace subtickinputs::inputs {
