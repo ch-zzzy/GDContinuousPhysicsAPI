@@ -1,4 +1,4 @@
-# Subtick Inputs API
+# Subtick Inputs API (ARCHIVED, MERGED WITH [SIP](<https://github.com/ch-zzzy/Superb-Input-Precision>))
 
 An API that lets consumer mods register inputs at sub-tick resolution
 while keeping the player's physics faithful to vanilla.
